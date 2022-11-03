@@ -1,0 +1,45 @@
+package main
+
+import (
+	"goko/models"
+	"log"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+func checkErr(err error) {
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func main() {
+
+	models.ConnectDatabase()
+
+	engine := gin.Default()
+
+	// API v1
+	v1 := engine.Group("/api/v1")
+	{
+		v1.GET("item", getItems)
+		v1.GET("item/:id", getItemById)
+		v1.POST("item", addItem)
+		v1.PUT("item/:id", updateItem)
+		v1.DELETE("item/:id", deleteItem)
+		// v1.OPTIONS("item", options)
+	}
+
+	engine.NoRoute(func(c *gin.Context) {
+		// c.AbortWithStatus(http.StatusNotFound)
+		c.JSON(404, gin.H{
+			"code": http.StatusNotFound, "message": "Page not found",
+		})
+	})
+
+	// By default it serves on :8080 unless a
+	// PORT environment variable was defined.
+	// engine.Run("0.0.0.0:8080")
+	engine.Run("127.0.0.1:8080")
+}
