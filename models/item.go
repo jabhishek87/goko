@@ -1,16 +1,18 @@
 package models
 
 import (
+	"time"
+
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 type Item struct {
-	gorm.Model
-	Id   int    `json:"id" gorm:"primary_key"`
-	Tags string `json:"tags"`
-	Data string `json:"data"`
-	// UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	//gorm.Model
+	Id        int       `json:"id" gorm:"primary_key"`
+	Tags      string    `json:"tags"`
+	Data      string    `json:"data"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 type CreateItem struct {
