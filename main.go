@@ -20,6 +20,12 @@ func main() {
 
 	engine := gin.Default()
 
+	// Load all HTMLs
+	engine.LoadHTMLGlob("templates/**/*")
+
+	//Assets Folder  Add Static Folder
+	engine.Static("/static", "./static")
+
 	// API v1
 	v1 := engine.Group("/api/v1")
 	{
@@ -29,6 +35,12 @@ func main() {
 		v1.PUT("item/:id", updateItem)
 		v1.DELETE("item/:id", deleteItem)
 		// v1.OPTIONS("item", options)
+	}
+
+	// frontend group
+	fe := engine.Group("frontend")
+	{
+		fe.GET("/", FeHome)
 	}
 
 	engine.NoRoute(func(c *gin.Context) {
