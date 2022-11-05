@@ -1,85 +1,165 @@
 package main
 
 import (
+	"context"
+	"goko/configs"
 	"goko/models"
+	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
+
+var itemCollection *mongo.Collection = configs.GetCollection(configs.DB, "items")
 
 func getItems(c *gin.Context) {
 	// c.JSON(http.StatusOK, gin.H{"message": "getItems Called"})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	var items []models.Item
-	models.DB.Find(&items)
-	c.JSON(http.StatusOK, gin.H{"data": items})
+	defer cancel()
+
+	results, _ := itemCollection.Find(ctx, bson.M{})
+	// models.DB.Find(&items)
+	// c.JSON(http.StatusOK, gin.H{"data": items})
+
+	//reading from the db in an optimal way
+	defer results.Close(ctx)
+	for results.Next(ctx) {
+		var singleItem models.Item
+		if err := results.Decode(&singleItem); err != nil {
+			c.JSON(http.StatusInternalServerError, models.ItemResponse{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"data": err.Error()}})
+		}
+		log.Println(singleItem)
+		items = append(items, singleItem)
+	}
+
+	c.JSON(http.StatusOK,
+		models.ItemResponse{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"items": items}},
+	)
 }
 
 func getItemById(c *gin.Context) {
-	// id := c.Param("id")
-	// c.JSON(http.StatusOK, gin.H{"message": "getPersonById " + id + " Called"})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ID := c.Param("id")
 	var item models.Item
-	if err := models.DB.Where("id = ?", c.Param("id")).First(&item).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Record not found!"})
+	defer cancel()
+
+	objId, _ := primitive.ObjectIDFromHex(ID)
+
+	err := itemCollection.FindOne(ctx, bson.M{"_id": objId}).Decode(&item)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ItemResponse{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"data": err.Error()}})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": item})
-
+	c.JSON(http.StatusOK, models.ItemResponse{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"item": item}})
 }
 
 func addItem(c *gin.Context) {
 	// c.JSON(http.StatusOK, gin.H{"message": "addItem Called"})
-	var input models.CreateItem
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	var item models.CreateItem
+	defer cancel()
+
+	//validate the request body
+	if err := c.BindJSON(&item); err != nil {
+		c.JSON(http.StatusBadRequest, models.ItemResponse{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"data": err.Error()}})
 		return
 	}
 
-	item := models.Item{Data: input.Data, Tags: input.Tags}
-	models.DB.Create(&item)
+	//use the validator library to validate required fields
+	// if validationErr := validate.Struct(&item); validationErr != nil {
+	// 	c.JSON(http.StatusBadRequest, models.ItemResponse{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"data": validationErr.Error()}})
+	// 	return
+	// }
 
-	c.JSON(http.StatusOK, gin.H{"data": item})
+	newItem := models.CreateItem{
+		Data: item.Data,
+		Tags: item.Tags,
+	}
+
+	result, err := itemCollection.InsertOne(ctx, newItem)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ItemResponse{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"data": err.Error()}})
+		return
+	}
+
+	c.JSON(http.StatusCreated, models.ItemResponse{Status: http.StatusCreated, Message: "success", Data: map[string]interface{}{"data": result}})
+
 }
 
 func updateItem(c *gin.Context) {
-	// id := c.Param("id")
-	// c.JSON(http.StatusOK, gin.H{"message": "updateItem Called with " + id})
-
-	// Get model if exist
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ID := c.Param("id")
 	var item models.Item
-	if err := models.DB.Where("id = ?", c.Param("id")).First(&item).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Record not found!"})
+	defer cancel()
+
+	objId, _ := primitive.ObjectIDFromHex(ID)
+	log.Println(objId)
+	//validate the request body
+	if err := c.BindJSON(&item); err != nil {
+		c.JSON(http.StatusBadRequest, models.ItemResponse{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"data": err.Error()}})
 		return
 	}
 
-	// Validate input
-	var input models.UpdateItem
+	// //use the validator library to validate required fields
+	// if validationErr := validate.Struct(&item); validationErr != nil {
+	// 	c.JSON(http.StatusBadRequest, models.ItemResponse{Status: http.StatusBadRequest, Message: "error", Data: map[string]interface{}{"data": validationErr.Error()}})
+	// 	return
+	// }
 
-	//log.Println(input)
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	update := bson.M{"data": item.Data, "tags": item.Tags}
+
+	result, err := itemCollection.UpdateOne(ctx, bson.M{"_id": objId}, bson.M{"$set": update})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ItemResponse{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"data": err.Error()}})
 		return
 	}
-	if err := models.DB.Model(&item).Updates(models.Item{Tags: input.Tags, Data: input.Data}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+
+	//get updated item details
+	var updatedItem models.Item
+	if result.MatchedCount == 1 {
+		err := itemCollection.FindOne(ctx, bson.M{"_id": objId}).Decode(&updatedItem)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, models.ItemResponse{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"data": err.Error()}})
+			return
+		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": item})
+	c.JSON(http.StatusOK, models.ItemResponse{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"data": updatedItem}})
 }
 
 func deleteItem(c *gin.Context) {
-	// id := c.Param("id")
-	// c.JSON(http.StatusOK, gin.H{"message": "deleteItem " + id + " Called"})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ID := c.Param("id")
+	defer cancel()
 
-	// Get model if exist
-	var item models.Item
-	if err := models.DB.Where("id = ?", c.Param("id")).First(&item).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Record not found!"})
+	objId, _ := primitive.ObjectIDFromHex(ID)
+
+	result, err := itemCollection.DeleteOne(ctx, bson.M{"_id": objId})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ItemResponse{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"data": err.Error()}})
 		return
 	}
 
-	models.DB.Delete(&item)
+	if result.DeletedCount < 1 {
+		c.JSON(http.StatusNotFound,
+			models.ItemResponse{Status: http.StatusNotFound, Message: "error", Data: map[string]interface{}{"data": "User with specified ID not found!"}},
+		)
+		return
+	}
 
-	c.JSON(http.StatusOK, gin.H{"data": true})
+	c.JSON(http.StatusOK,
+		models.ItemResponse{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"data": "User successfully deleted!"}},
+	)
 }

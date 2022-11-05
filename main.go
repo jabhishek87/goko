@@ -1,7 +1,7 @@
 package main
 
 import (
-	"goko/models"
+	"goko/configs"
 	"log"
 	"net/http"
 
@@ -16,7 +16,8 @@ func checkErr(err error) {
 
 func main() {
 
-	models.ConnectDatabase()
+	//run database
+	configs.ConnectDB()
 
 	engine := gin.Default()
 
